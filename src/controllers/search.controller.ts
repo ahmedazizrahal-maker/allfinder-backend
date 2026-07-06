@@ -6,27 +6,28 @@ import { extractContacts } from "../utils/extractContacts";
 import { geocodeAddress } from "../utils/geocode";
 
 export const searchPlaces = async (req: Request, res: Response) => {
-  const { q, lat, lng, radius } = req.query;
+  const { q } = req.query;
 
   if (!q) return res.status(400).json({ message: "Query is required" });
 
   try {
-    const googleRes = await axios.get(
-      "https://www.googleapis.com/customsearch/v1",
+    // 🔥 Serper.dev search request
+    const serperRes = await axios.post(
+      "https://google.serper.dev/search",
       {
-        params: {
-          key: process.env.GOOGLE_SEARCH_KEY,
-          cx: process.env.GOOGLE_SEARCH_ENGINE_ID,
-          q,
-          gl: "ch",
-          cr: "countryCH",
-          lr: "lang_de|lang_fr|lang_it|lang_en",
-          num: 10,
+        q,
+        gl: "ch", // Switzerland
+        hl: "de", // German (you can change dynamically later)
+      },
+      {
+        headers: {
+          "X-API-KEY": process.env.SERPER_API_KEY!,
+          "Content-Type": "application/json",
         },
       }
     );
 
-    const items = googleRes.data.items || [];
+    const items = serperRes.data.organic || [];
     const results: any[] = [];
 
     for (const item of items) {
@@ -46,11 +47,9 @@ export const searchPlaces = async (req: Request, res: Response) => {
       const contact = extractContacts(html);
 
       // Geocode
-      const address =
-        contact.addressUrl || item.formattedUrl || item.displayLink || null;
+      const address = contact.addressUrl || item.snippet || item.title || null;
 
       const coords = await geocodeAddress(address);
-
       if (!coords) continue;
 
       // Save or update place
@@ -62,7 +61,7 @@ export const searchPlaces = async (req: Request, res: Response) => {
           navbarLinks,
           contact,
           location: coords,
-          source: "google_search",
+          source: "serper",
         },
         { upsert: true, new: true }
       );
@@ -72,6 +71,7 @@ export const searchPlaces = async (req: Request, res: Response) => {
 
     res.json(results);
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: "Search failed", error });
   }
 };
